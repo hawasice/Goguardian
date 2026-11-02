@@ -1,0 +1,366 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>POC</title>
+<style>
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{
+    margin:0;overflow:hidden;color:#e6edf3;
+    font:14px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif;
+    background:radial-gradient(1200px 800px at 20% 0%,#1b2430 0%,#0d1117 55%,#070a0e 100%);
+  }
+
+  /* ---------- background ---------- */
+  #page{position:absolute;inset:0;display:grid;place-content:center;text-align:center;
+        padding:40px 24px 200px;pointer-events:none;user-select:none}
+  #page h1{margin:0 0 10px;font-size:clamp(44px,9vw,96px);letter-spacing:-.03em;
+    background:linear-gradient(180deg,#e6edf3,#5d6673);-webkit-background-clip:text;
+    background-clip:text;color:transparent}
+  #page p{margin:4px 0;font-size:13px;color:#8b949e}
+  #page .hint{max-width:520px;margin:16px auto 0;font-size:12px;line-height:1.6;color:#6e7681}
+
+  /* ---------- dock ---------- */
+  #dock{position:fixed;right:14px;bottom:14px;display:flex;flex-direction:column;
+        align-items:flex-end;gap:10px;z-index:2147483000}
+
+  /* ---------- log panel ---------- */
+  #panel{
+    width:min(420px,calc(100vw - 28px));height:230px;display:none;
+    flex-direction:column;overflow:hidden;border-radius:12px;
+    background:#0d1117;border:1px solid #30363d;
+    box-shadow:0 22px 60px rgba(0,0,0,.65);
+  }
+  #panel.show{display:flex}
+  #head{flex:0 0 auto;display:flex;align-items:center;gap:8px;padding:7px 10px;
+        background:#161b22;border-bottom:1px solid #30363d;font-size:12px}
+  #dot{width:8px;height:8px;border-radius:50%;background:#6e7681}
+  #dot.live{background:#3fb950;box-shadow:0 0 0 3px rgba(63,185,80,.2)}
+  #status{flex:1 1 auto;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#b6c2cf}
+  #hide{background:none;border:0;color:#6e7681;font-size:16px;line-height:1;cursor:pointer;padding:0 2px}
+  #hide:hover{color:#ff7b72}
+
+  #log{flex:1 1 auto;overflow:auto;padding:6px 10px;font:11px/1.6 ui-monospace,SFMono-Regular,Menlo,monospace;color:#8b949e}
+  #log .line{white-space:pre-wrap;word-break:break-word}
+  #log .line.warn{color:#d29922}
+  #log .line.err{color:#ff7b72}
+  #log::-webkit-scrollbar{width:8px}
+  #log::-webkit-scrollbar-thumb{background:#30363d;border-radius:4px}
+
+  /* ---------- control bar ---------- */
+  #bar{display:flex;align-items:center;gap:8px;padding:8px 10px;font-size:12px;
+       background:rgba(22,27,34,.92);border:1px solid #30363d;border-radius:12px;
+       box-shadow:0 10px 30px rgba(0,0,0,.55);backdrop-filter:blur(10px);
+       flex-wrap:wrap;justify-content:flex-end;max-width:calc(100vw - 28px)}
+  .badge{padding:3px 7px;font-size:10px;font-weight:800;letter-spacing:.09em;color:#58a6ff;
+         background:rgba(56,139,253,.12);border:1px solid rgba(56,139,253,.4);border-radius:5px}
+
+  #slider{-webkit-appearance:none;appearance:none;width:130px;height:4px;border-radius:99px;
+          outline:none;cursor:pointer;background:#30363d}
+  #slider::-webkit-slider-thumb{-webkit-appearance:none;width:14px;height:14px;border-radius:50%;
+    background:#e6edf3;border:2px solid #1f6feb;box-shadow:0 0 0 3px rgba(31,111,235,.25);cursor:pointer}
+  #slider::-moz-range-thumb{width:14px;height:14px;border-radius:50%;background:#e6edf3;
+    border:2px solid #1f6feb;cursor:pointer}
+
+  #num{width:66px;padding:5px 6px;font:inherit;font-size:12px;color:#e6edf3;background:#0d1117;
+       border:1px solid #30363d;border-radius:7px;outline:none;text-align:right}
+  #num:focus{border-color:#388bfd;box-shadow:0 0 0 3px rgba(56,139,253,.18)}
+
+  select{padding:5px 6px;font:inherit;font-size:12px;color:#e6edf3;background:#0d1117;
+         border:1px solid #30363d;border-radius:7px;outline:none;cursor:pointer}
+
+  .btn{padding:6px 11px;font:inherit;font-size:12px;line-height:1;color:#e6edf3;background:#21262d;
+       border:1px solid #30363d;border-radius:7px;cursor:pointer;white-space:nowrap}
+  .btn:hover:not(:disabled){background:#30363d}
+  .btn:active:not(:disabled){transform:translateY(1px)}
+  .btn:disabled{opacity:.4;cursor:not-allowed}
+  .btn.primary{background:#238636;border-color:#2ea043}
+  .btn.primary:hover:not(:disabled){background:#2ea043}
+  .btn.danger{background:#43232b;border-color:#6e2a33;color:#ffa198}
+  .btn.danger:hover:not(:disabled){background:#5b2c36}
+</style>
+</head>
+<body>
+
+<main id="page">
+  <h1>POC</h1>
+  <p>iframe print stress harness</p>
+  <p class="hint">
+    Slider = how many frames to open (1 → 10,000).<br>
+    Each one loads a page that tries to <code>print()</code> itself.<br>
+    This will hammer your machine. Use <b>Stop</b>.
+  </p>
+</main>
+
+<div id="dock">
+  <div id="panel">
+    <div id="head">
+      <span id="dot"></span>
+      <span id="status">idle</span>
+      <button id="hide" title="Hide log">&times;</button>
+    </div>
+    <div id="log"></div>
+  </div>
+
+  <div id="bar">
+    <span class="badge">POC</span>
+    <input id="slider" type="range" min="0" max="1000" value="500"
+           aria-label="Number of frames">
+    <input id="num" type="number" min="1" max="10000" value="100"
+           aria-label="Exact frame count">
+    <select id="mode" aria-label="Open mode">
+      <option value="window">New windows</option>
+      <option value="frame">In-page iframes</option>
+    </select>
+    <button class="btn primary" id="launch">Launch</button>
+    <button class="btn danger" id="stop" disabled>Stop</button>
+  </div>
+</div>
+
+<script>
+(function () {
+  'use strict';
+
+  const MAX = 10000;
+
+  const slider   = document.getElementById('slider');
+  const numEl    = document.getElementById('num');
+  const modeEl   = document.getElementById('mode');
+  const launchEl = document.getElementById('launch');
+  const stopEl   = document.getElementById('stop');
+
+  const panel    = document.getElementById('panel');
+  const logEl    = document.getElementById('log');
+  const statusEl = document.getElementById('status');
+  const dot      = document.getElementById('dot');
+  const hideEl   = document.getElementById('hide');
+
+  /* ---------------- slider <-> number sync (log scale) ---------------- */
+  const countFromSlider = v => Math.max(1, Math.round(Math.pow(MAX, v / 1000)));
+  const sliderFromCount = c => Math.round(1000 * Math.log(c) / Math.log(MAX));
+
+  function clampCount(c) {
+    c = Math.floor(Number(c) || 1);
+    return Math.min(MAX, Math.max(1, c));
+  }
+
+  slider.addEventListener('input', () => {
+    numEl.value = countFromSlider(Number(slider.value));
+  });
+  numEl.addEventListener('change', () => {
+    const c = clampCount(numEl.value);
+    numEl.value = c;
+    slider.value = sliderFromCount(c);
+  });
+
+  /* ------------------------------ logging ----------------------------- */
+  function log(msg, cls) {
+    const line = document.createElement('div');
+    line.className = 'line' + (cls ? ' ' + cls : '');
+    const t = new Date().toLocaleTimeString();
+    line.textContent = t + '  ' + msg;
+    logEl.appendChild(line);
+    while (logEl.childElementCount > 300) logEl.removeChild(logEl.firstChild);
+    logEl.scrollTop = logEl.scrollHeight;
+  }
+
+  hideEl.addEventListener('click', () => panel.classList.remove('show'));
+
+  /* ------------------------- printable document ----------------------- */
+  function makeDoc(n) {
+    return '<!doctype html><html><head><meta charset="utf-8">' +
+      '<title>POC #' + n + '</title>' +
+      '<style>html,body{height:100%;margin:0}' +
+      'body{display:grid;place-items:center;background:#0d1117;color:#e6edf3;' +
+      'font:16px system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif;text-align:center}' +
+      'h1{margin:0 0 8px;font-size:clamp(32px,8vw,72px);letter-spacing:-.03em;' +
+      'background:linear-gradient(180deg,#e6edf3,#5d6673);-webkit-background-clip:text;' +
+      'background-clip:text;color:transparent}' +
+      'p{margin:0;color:#8b949e;font-size:14px}</style></head><body>' +
+      '<div><h1>POC #' + n + '</h1><p>trying to print\u2026</p></div>' +
+      '<script>window.addEventListener("load",function(){' +
+      'setTimeout(function(){try{window.print()}catch(e){}},80)})' +
+      '<' + '/script></body></html>';
+  }
+
+  /* ------------------------------ runtime ----------------------------- */
+  let running = false;
+  let timer   = null;
+  let total   = 0;
+  let i       = 0;
+  let opened  = 0;
+  let blocked = 0;
+  let gap     = 100;
+  let frameBusy = false;
+
+  function updateStatus() {
+    if (running) {
+      statusEl.textContent = 'running ' + i + '/' + total +
+        ' \u00b7 ok ' + opened + ' \u00b7 blocked ' + blocked;
+    } else if (total) {
+      statusEl.textContent = 'done ' + i + '/' + total +
+        ' \u00b7 ok ' + opened + ' \u00b7 blocked ' + blocked;
+    } else {
+      statusEl.textContent = 'idle';
+    }
+  }
+
+  /* ---------- mode A: real new browser windows/tabs ---------- */
+  function openWindow(n) {
+    let w = null;
+    try {
+      w = window.open('', '_blank');
+      if (w && w.document) {
+        w.document.open();
+        w.document.write(makeDoc(n));
+        w.document.close();
+        opened++;
+      } else {
+        blocked++;
+      }
+    } catch (e) {
+      blocked++;
+      if (w) { try { w.close(); } catch (_) {} }
+    }
+  }
+
+  /* ---------- mode B: iframes inside this page ---------- */
+  function openFrame(n) {
+    frameBusy = true;
+
+    const iframe = document.createElement('iframe');
+    iframe.setAttribute('title', 'POC #' + n);
+    iframe.style.cssText =
+      'position:absolute;left:-10000px;top:0;width:1024px;height:768px;border:0';
+    iframe.srcdoc = makeDoc(n);
+
+    let done = false;
+    const finishOne = () => {
+      if (done) return;
+      done = true;
+      try { iframe.remove(); } catch (e) {}
+      frameBusy = false;
+      if (running) setTimeout(step, 60);
+    };
+
+    iframe.addEventListener('load', () => {
+      opened++;
+      updateStatus();
+      setTimeout(() => {
+        try {
+          iframe.contentWindow.focus();
+          iframe.contentWindow.print();
+        } catch (e) {
+          log('#' + n + ' print blocked: ' + (e && e.name || e), 'warn');
+        }
+        setTimeout(finishOne, 350);
+      }, 120);
+    }, { once: true });
+
+    // safety net if load never fires
+    setTimeout(() => { if (!done && running) { blocked++; finishOne(); } }, 4000);
+
+    document.body.appendChild(iframe);
+  }
+
+  /* ------------------------------ driver ------------------------------ */
+  function step() {
+    if (!running) return;
+
+    if (i >= total) { finish(); return; }
+    i++;
+
+    if (modeEl.value === 'window') {
+      openWindow(i);
+      updateStatus();
+      timer = setTimeout(step, gap);
+    } else {
+      openFrame(i);
+      updateStatus();
+    }
+  }
+
+  function finish() {
+    running = false;
+    clearTimeout(timer);
+    timer = null;
+    launchEl.disabled = false;
+    stopEl.disabled = true;
+    dot.classList.remove('live');
+    updateStatus();
+    log('finished \u2014 ' + i + ' attempted, ' + opened + ' opened, ' + blocked + ' blocked');
+    if (blocked > 0 && modeEl.value === 'window') {
+      log('Popup blocker ate ' + blocked + '. Allow popups for this page and retry.', 'warn');
+    }
+  }
+
+  function start() {
+    if (running) return;
+
+    const n = clampCount(numEl.value);
+    numEl.value = n;
+    slider.value = sliderFromCount(n);
+
+    const mode = modeEl.value;
+    const what = mode === 'window'
+      ? 'new browser windows/tabs'
+      : 'in-page iframes';
+
+    if (n > 20) {
+      const ok = confirm(
+        'POC\n\n' +
+        'Open ' + n.toLocaleString() + ' ' + what + ',\n' +
+        'each of which tries to open a print dialog.\n\n' +
+        'This will very likely freeze or crash your browser.\n\n' +
+        'Continue?'
+      );
+      if (!ok) return;
+    }
+
+    total = n;
+    i = 0;
+    opened = 0;
+    blocked = 0;
+    running = true;
+
+    // adaptive pacing: small counts are slow & readable, huge counts blast
+    gap = Math.max(15, Math.min(400, 2000 / n));
+
+    panel.classList.add('show');
+    dot.classList.add('live');
+    launchEl.disabled = true;
+    stopEl.disabled = false;
+    updateStatus();
+
+    log('launch ' + n + ' via ' + mode + ' (gap ' + gap + 'ms)');
+    step();
+  }
+
+  function stop() {
+    if (!running) return;
+    running = false;
+    clearTimeout(timer);
+    timer = null;
+    launchEl.disabled = false;
+    stopEl.disabled = true;
+    dot.classList.remove('live');
+    updateStatus();
+    log('stopped at ' + i + '/' + total, 'err');
+  }
+
+  launchEl.addEventListener('click', start);
+  stopEl.addEventListener('click', stop);
+
+  window.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && running) stop();
+  });
+
+  // init
+  numEl.value = countFromSlider(Number(slider.value));
+  updateStatus();
+})();
+</script>
+</body>
+</html>
